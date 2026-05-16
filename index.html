@@ -10,7 +10,7 @@
     .score, .chart-container, .history, .stats { max-width: 420px; margin: auto; text-align: left; background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     canvas { width: 100%; height: auto; margin-top: 10px; }
     .auto-panel { background: #e3f2fd; padding: 12px; border-radius: 10px; max-width: 420px; margin: 10px auto; text-align: center; font-weight: bold; border: 1px solid #90caf9; }
-    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 14px; padding: 6px 12px; margin: 5px; border-radius: 4px; }
+    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 14px; padding: 8px 12px; margin: 5px; border-radius: 6px; font-weight: bold; }
     h1, h2 { margin-bottom: 10px; font-size: 20px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
     p { margin: 8px 0; font-size: 16px; }
     span { font-weight: bold; color: #007bff; }
@@ -21,12 +21,12 @@
 
   <h1>ぷよテト2 スコアボード</h1>
   
-  <!-- MacroDroid連動パネル -->
+  <!-- MacroDroid連動パネル（文字入力エラーを回避するため、マクロにここを押させます） -->
   <div class="auto-panel">
-    現在の登録レート: <span id="currentRateView">-</span>
+    自動連動トリガー
     <div style="margin-top: 5px;">
-      <button id="macroWinBtn" class="macro-btn" onclick="triggerMacroWin()">【勝ち自動】</button>
-      <button id="macroLoseBtn" class="macro-btn" onclick="triggerMacroLose()">【負け自動】</button>
+      <button id="macroWinBtn" class="macro-btn" onclick="autoCalculateRate(12)">【勝率+レートアップ】</button>
+      <button id="macroLoseBtn" class="macro-btn" onclick="autoCalculateRate(-10)">【勝率+レートダウン】</button>
     </div>
   </div>
 
@@ -44,9 +44,10 @@
     </div>
   </div>
 
-  <!-- 【新規】レートに関する詳細統計エリア -->
+  <!-- レートに関する詳細統計エリア -->
   <div class="stats">
     <h2>レート統計</h2>
+    <p>現在のレート: <span id="currentRateView">-</span></p>
     <p>最高レート: <span id="maxRateText">-</span></p>
     <p>最低レート: <span id="minRateText">-</span></p>
     <p>平均レート: <span id="avgRateText">-</span></p>
@@ -60,9 +61,9 @@
     <p>中央値: <span id="medianRate">-</span></p>
   </div>
 
-  <!-- グラフエリア (2つに拡張) -->
+  <!-- 2つのグラフエリア -->
   <div class="chart-container">
-    <h2>【新規】レート推移グラフ</h2>
+    <h2>レート推移グラフ</h2>
     <canvas id="rateHistoryChart"></canvas>
   </div>
 
@@ -77,17 +78,16 @@
     <ul id="historyList" style="padding-left: 20px; margin: 5px 0;"></ul>
   </div>
 
-  <!-- グラフ表示用のライブラリ読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     let wins = 0, games = 0, history = [], pastRates = [], rateDetails = [], undoStack = [];
     let chartWinrate, chartRateHistory;
     let resetPressCount = 0;
     let resetTimeout;
-    let lastSavedRate = null;
     
-    // 【新規】全試合のレート推移を1試合ずつ記録する配列
-    let rateHistoryLog = []; 
+    // 初期の基準レート（最初は2000点からスタートし、自動で上下させます）
+    let lastSavedRate = 2000;
+    let rateHistoryLog = [2000]; 
 
     function loadFromStorage() {
       try {
@@ -98,10 +98,10 @@
           history = saved.history || [];
           pastRates = saved.pastRates || [];
           rateDetails = saved.rateDetails || [];
-          rateHistoryLog = saved.rateHistoryLog || []; // 読み込み
+          rateHistoryLog = saved.rateHistoryLog || [2000];
         }
       } catch(e) {}
-      lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : null;
+      lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : 2000;
     }
 
     function saveToStorage() {
@@ -125,17 +125,13 @@
       updateCharts();
       updateStats();
       
-      if(lastSavedRate) {
-        document.getElementById("currentRateView").textContent = lastSavedRate;
-      } else {
-        document.getElementById("currentRateView").textContent = "-";
-      }
+      document.getElementById("currentRateView").textContent = lastSavedRate + " 点";
     }
 
     function updateCharts() {
       if (typeof Chart === 'undefined') return;
 
-      // 1. 勝率グラフの更新
+      // 1. 勝率グラフ
       const ctxWin = document.getElementById("winrateChart").getContext("2d");
       if (chartWinrate) chartWinrate.destroy();
       chartWinrate = new Chart(ctxWin, {
@@ -154,7 +150,7 @@
         options: { responsive: true, scales: { y: { suggestedMin: 0, suggestedMax: 100, ticks: { callback: value => value + '%' } } } }
       });
 
-      // 2. 【新規】レート推移グラフの更新
+      // 2. レート推移グラフ
       const ctxRate = document.getElementById("rateHistoryChart").getContext("2d");
       if (chartRateHistory) chartRateHistory.destroy();
       chartRateHistory = new Chart(ctxRate, {
@@ -203,7 +199,7 @@
         minRateDetailEl.textContent = minDetail ? ` (試合数: ${minDetail.games}, ${minDetail.time})` : "-";
       }
 
-      // 【新規】レート統計の更新処理
+      // レート統計
       const maxRateText = document.getElementById("maxRateText");
       const minRateText = document.getElementById("minRateText");
       const avgRateText = document.getElementById("avgRateText");
@@ -214,7 +210,7 @@
         const maxRateVal = Math.max(...rateHistoryLog);
         const minRateVal = Math.min(...rateHistoryLog);
         const sumRateVal = rateHistoryLog.reduce((a, b) => a + b, 0);
-        const avgRateVal = (sumRateVal / rateHistoryLog.length).toFixed(0); // 小数点は四捨五入
+        const avgRateVal = (sumRateVal / rateHistoryLog.length).toFixed(0);
 
         maxRateText.textContent = maxRateVal + " 点";
         minRateText.textContent = minRateVal + " 点";
@@ -244,24 +240,32 @@
         history: [...history],
         pastRates: [...pastRates],
         rateDetails: [...rateDetails],
-        rateHistoryLog: [...rateHistoryLog], // 戻すボタン用に保存
+        rateHistoryLog: [...rateHistoryLog],
         lastSavedRate: lastSavedRate
       });
     }
 
-    window.addWin = function() {
+    // 【新規】マクロのタップを検知して、勝敗カウントと同時にレートも増減させてグラフ・統計を回す処理
+    window.autoCalculateRate = function(amount) {
       saveStateForUndo();
-      wins++; games++;
-      if(lastSavedRate) rateHistoryLog.push(lastSavedRate); // レートログに追記
-      saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
+      
+      if (amount > 0) {
+        wins++;
+      }
+      games++;
+      
+      // レートを加算・減算
+      lastSavedRate = lastSavedRate + amount;
+      rateHistoryLog.push(lastSavedRate);
+      
+      localStorage.setItem("lastSavedRate", lastSavedRate);
+      saveToStorage(); 
+      updateDisplay(); 
+      checkAndRecordIfNeeded();
     };
 
-    window.addLoss = function() {
-      saveStateForUndo();
-      games++;
-      if(lastSavedRate) rateHistoryLog.push(lastSavedRate); // レートログに追記
-      saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
-    };
+    window.addWin = function() { window.autoCalculateRate(12); };   // 手動勝ちボタン（平均的な+12点で計算）
+    window.addLoss = function() { window.autoCalculateRate(-10); }; // 手動負けボタン（平均的な-10点で計算）
 
     window.undo = function() {
       if (undoStack.length === 0) return;
@@ -271,23 +275,19 @@
       history = [...last.history];
       pastRates = [...last.pastRates];
       rateDetails = [...last.rateDetails];
-      rateHistoryLog = [...last.rateHistoryLog]; // 1つ前に戻す
+      rateHistoryLog = [...last.rateHistoryLog];
       lastSavedRate = last.lastSavedRate;
-      if (lastSavedRate === null) {
-        localStorage.removeItem("lastSavedRate");
-      } else {
-        localStorage.setItem("lastSavedRate", lastSavedRate);
-      }
+      localStorage.setItem("lastSavedRate", lastSavedRate);
       saveToStorage(); updateDisplay();
     };
 
     window.tryReset = function() {
       resetPressCount++;
       if (resetPressCount >= 3) {
-        wins = 0; games = 0; history = []; pastRates = []; rateDetails = []; rateHistoryLog = [];
-        lastSavedRate = null;
+        wins = 0; games = 0; history = []; pastRates = []; rateDetails = []; rateHistoryLog = [2000];
+        lastSavedRate = 2000;
         resetPressCount = 0;
-        localStorage.removeItem("lastSavedRate");
+        localStorage.setItem("lastSavedRate", 2000);
         saveToStorage(); updateDisplay();
         alert("リセットされました");
       } else {
@@ -296,36 +296,6 @@
         alert(`リセットするにはもう${3 - resetPressCount}回押してください`);
       }
     };
-
-    // MacroDroidからの信号を受け取り自動判定を回すコア処理
-    function handleNewRateInput() {
-      const newRate = parseInt(prompt("新しいレートを入力してください"));
-      if (isNaN(newRate)) return;
-      
-      if (lastSavedRate !== null) {
-        if (newRate > lastSavedRate) {
-          lastSavedRate = newRate;
-          localStorage.setItem("lastSavedRate", lastSavedRate);
-          window.addWin(); // 勝ち処理内で自動的にrateHistoryLogへ追記されます
-        } else if (newRate < lastSavedRate) {
-          lastSavedRate = newRate;
-          localStorage.setItem("lastSavedRate", lastSavedRate);
-          window.addLoss(); // 負け処理内で自動的にrateHistoryLogへ追記されます
-        } else {
-          alert(`レートに変動画ありません（現在: ${newRate}）`);
-        }
-      } else {
-        // 初回のみ基準登録してログの1点目にする
-        lastSavedRate = newRate;
-        rateHistoryLog.push(newRate); 
-        localStorage.setItem("lastSavedRate", lastSavedRate);
-        updateDisplay();
-        alert(`初期基準レートとして【 ${newRate} 】を設定しました。`);
-      }
-    }
-
-    window.triggerMacroWin = function() { handleNewRateInput(); };
-    window.triggerMacroLose = function() { handleNewRateInput(); };
 
     loadFromStorage();
     updateDisplay();
