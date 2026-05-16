@@ -4,74 +4,108 @@
   <meta charset="UTF-8">
   <title>自動レートスコアボード</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    button, input { font-size: 18px; margin: 5px; padding: 10px; }
-    .score, .chart-container, .history, .stats { max-width: 400px; margin: auto; text-align: left; background: #f9f9f9; padding: 10px; border-radius: 10px; margin-top: 20px; }
-    canvas { width: 100%; height: auto; }
-    .auto-panel { background: #e3f2fd; padding: 10px; border-radius: 10px; max-width: 400px; margin: 10px auto; text-align: center; font-weight: bold; }
-    /* MacroDroidに数字を打ってもらうための隠し箱 */
-    #rateInputHidden { width: 100px; height: 30px; opacity: 0.1; position: absolute; top: 10px; left: 10px; }
+    body { font-family: sans-serif; text-align: center; padding: 20px; color: #333; background-color: #f0f2f5; }
+    button { font-size: 18px; margin: 5px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; cursor: pointer; }
+    button:active { background-color: #ddd; }
+    .score, .chart-container, .history, .stats { max-width: 420px; margin: auto; text-align: left; background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    canvas { width: 100%; height: auto; margin-top: 10px; }
+    .auto-panel { background: #e3f2fd; padding: 12px; border-radius: 10px; max-width: 420px; margin: 10px auto; text-align: center; font-weight: bold; border: 1px solid #90caf9; }
+    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 14px; padding: 6px 12px; margin: 5px; border-radius: 4px; }
+    h1, h2 { margin-bottom: 10px; font-size: 20px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+    p { margin: 8px 0; font-size: 16px; }
+    span { font-weight: bold; color: #007bff; }
+    .sub-detail { font-size: 13px; color: #666; margin-left: 10px; font-weight: normal; }
   </style>
 </head>
 <body>
 
-  <h1>スコアボード</h1>
+  <h1>ぷよテト2 スコアボード</h1>
   
+  <!-- MacroDroid連動パネル -->
   <div class="auto-panel">
     現在の登録レート: <span id="currentRateView">-</span>
+    <div style="margin-top: 5px;">
+      <button id="macroWinBtn" class="macro-btn" onclick="triggerMacroWin()">【勝ち自動】</button>
+      <button id="macroLoseBtn" class="macro-btn" onclick="triggerMacroLose()">【負け自動】</button>
+    </div>
   </div>
 
-  <!-- テスト用に少しだけ薄く見えるようにしています -->
-  <input type="number" id="rateInputHidden" placeholder="自動連動用">
-
+  <!-- 基本スコアエリア -->
   <div class="score">
+    <h2>基本スコア</h2>
     <p>勝ち: <span id="wins">0</span></p>
     <p>試合数: <span id="games">0</span></p>
     <p>勝率: <span id="winrate">0%</span></p>
-    <button onclick="addWin()">勝ち +1</button>
-    <button onclick="addLoss()">負け +1</button>
-    <button onclick="undo()">↩️ 戻す</button>
-    <button onclick="tryReset()">リセット</button>
+    <div style="text-align: center; margin-top: 10px;">
+      <button onclick="addWin()" style="background-color: #e8f5e9;">勝ち +1</button>
+      <button onclick="addLoss()" style="background-color: #ffebee;">負け +1</button>
+      <button onclick="undo()">↩️ 戻す</button>
+      <button onclick="tryReset()" style="background-color: #eceff1;">リセット</button>
+    </div>
   </div>
-  <div class="history">
-    <h2>30試合ごとの履歴</h2>
-    <ul id="historyList"></ul>
-  </div>
-  <div class="chart-container">
-    <h2>勝率グラフ</h2>
-    <canvas id="winrateChart"></canvas>
-  </div>
+
+  <!-- 【新規】レートに関する詳細統計エリア -->
   <div class="stats">
-    <h2>統計</h2>
-    <p>最大勝率: <span id="maxRate">-</span></p>
-    <p>　↳ <span id="maxRateDetail">-</span></p>
-    <p>最小勝率: <span id="minRate">-</span></p>
-    <p>　↳ <span id="minRateDetail">-</span></p>
+    <h2>レート統計</h2>
+    <p>最高レート: <span id="maxRateText">-</span></p>
+    <p>最低レート: <span id="minRateText">-</span></p>
+    <p>平均レート: <span id="avgRateText">-</span></p>
+  </div>
+
+  <!-- 勝率に関する統計エリア -->
+  <div class="stats">
+    <h2>勝率統計 (30試合ごと)</h2>
+    <p>最大勝率: <span id="maxRate">-</span><span id="maxRateDetail" class="sub-detail">-</span></p>
+    <p>最小勝率: <span id="minRate">-</span><span id="minRateDetail" class="sub-detail">-</span></p>
     <p>中央値: <span id="medianRate">-</span></p>
   </div>
 
+  <!-- グラフエリア (2つに拡張) -->
+  <div class="chart-container">
+    <h2>【新規】レート推移グラフ</h2>
+    <canvas id="rateHistoryChart"></canvas>
+  </div>
+
+  <div class="chart-container">
+    <h2>勝率推移グラフ (30試合ごと)</h2>
+    <canvas id="winrateChart"></canvas>
+  </div>
+
+  <!-- 履歴エリア -->
+  <div class="history">
+    <h2>30試合ごとの履歴</h2>
+    <ul id="historyList" style="padding-left: 20px; margin: 5px 0;"></ul>
+  </div>
+
+  <!-- グラフ表示用のライブラリ読み込み -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     let wins = 0, games = 0, history = [], pastRates = [], rateDetails = [], undoStack = [];
-    let chart;
+    let chartWinrate, chartRateHistory;
     let resetPressCount = 0;
     let resetTimeout;
     let lastSavedRate = null;
+    
+    // 【新規】全試合のレート推移を1試合ずつ記録する配列
+    let rateHistoryLog = []; 
 
     function loadFromStorage() {
-      const saved = JSON.parse(localStorage.getItem("scoreData"));
-      if (saved) {
-        wins = saved.wins || 0;
-        games = saved.games || 0;
-        history = saved.history || [];
-        pastRates = saved.pastRates || [];
-        rateDetails = saved.rateDetails || [];
-      }
+      try {
+        const saved = JSON.parse(localStorage.getItem("scoreData"));
+        if (saved) {
+          wins = saved.wins || 0;
+          games = saved.games || 0;
+          history = saved.history || [];
+          pastRates = saved.pastRates || [];
+          rateDetails = saved.rateDetails || [];
+          rateHistoryLog = saved.rateHistoryLog || []; // 読み込み
+        }
+      } catch(e) {}
       lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : null;
     }
 
     function saveToStorage() {
-      localStorage.setItem("scoreData", JSON.stringify({ wins, games, history, pastRates, rateDetails }));
+      localStorage.setItem("scoreData", JSON.stringify({ wins, games, history, pastRates, rateDetails, rateHistoryLog }));
     }
 
     function updateDisplay() {
@@ -88,7 +122,7 @@
         historyList.appendChild(li);
       }
 
-      updateChart();
+      updateCharts();
       updateStats();
       
       if(lastSavedRate) {
@@ -98,34 +132,50 @@
       }
     }
 
-    function updateChart() {
-      const ctx = document.getElementById("winrateChart").getContext("2d");
-      if (chart) chart.destroy();
+    function updateCharts() {
       if (typeof Chart === 'undefined') return;
 
-      chart = new Chart(ctx, {
+      // 1. 勝率グラフの更新
+      const ctxWin = document.getElementById("winrateChart").getContext("2d");
+      if (chartWinrate) chartWinrate.destroy();
+      chartWinrate = new Chart(ctxWin, {
         type: 'line',
         data: {
-          labels: pastRates.map((_, i) => `${(i + 1) * 30}試合目`),
+          labels: pastRates.map((_, i) => `${(i + 1) * 30}割`),
           datasets: [{
             label: '勝率 (%)',
             data: pastRates,
-            borderColor: 'blue',
-            backgroundColor: 'rgba(0, 123, 255, 0.2)',
-            tension: 0.3,
+            borderColor: '#2196f3',
+            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+            tension: 0.2,
             fill: true
-          }],
+          }]
         },
-        options: {
-          responsive: true,
-          scales: {
-            y: { suggestedMin: 0, suggestedMax: 100, ticks: { callback: value => value + '%' } }
-          }
-        }
+        options: { responsive: true, scales: { y: { suggestedMin: 0, suggestedMax: 100, ticks: { callback: value => value + '%' } } } }
+      });
+
+      // 2. 【新規】レート推移グラフの更新
+      const ctxRate = document.getElementById("rateHistoryChart").getContext("2d");
+      if (chartRateHistory) chartRateHistory.destroy();
+      chartRateHistory = new Chart(ctxRate, {
+        type: 'line',
+        data: {
+          labels: rateHistoryLog.map((_, i) => `${i}戦目`),
+          datasets: [{
+            label: '現在のレート',
+            data: rateHistoryLog,
+            borderColor: '#4caf50',
+            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+            tension: 0.1,
+            fill: true
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: false } } }
       });
     }
 
     function updateStats() {
+      // 勝率統計
       const maxRateEl = document.getElementById("maxRate");
       const minRateEl = document.getElementById("minRate");
       const medianRateEl = document.getElementById("medianRate");
@@ -135,24 +185,41 @@
       if (pastRates.length === 0) {
         maxRateEl.textContent = minRateEl.textContent = medianRateEl.textContent = "-";
         maxRateDetailEl.textContent = minRateDetailEl.textContent = "-";
-        return;
+      } else {
+        const max = Math.max(...pastRates);
+        const min = Math.min(...pastRates);
+        const sorted = [...pastRates].sort((a, b) => a - b);
+        const median = (sorted.length % 2 === 0)
+          ? ((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2).toFixed(1)
+          : sorted[Math.floor(sorted.length / 2)].toFixed(1);
+
+        maxRateEl.textContent = max.toFixed(1) + "%";
+        minRateEl.textContent = min.toFixed(1) + "%";
+        medianRateEl.textContent = median + "%";
+
+        const maxDetail = rateDetails.find(d => d.rate === max);
+        const minDetail = rateDetails.find(d => d.rate === min);
+        maxRateDetailEl.textContent = maxDetail ? ` (試合数: ${maxDetail.games}, ${maxDetail.time})` : "-";
+        minRateDetailEl.textContent = minDetail ? ` (試合数: ${minDetail.games}, ${minDetail.time})` : "-";
       }
 
-      const max = Math.max(...pastRates);
-      const min = Math.min(...pastRates);
-      const sorted = [...pastRates].sort((a, b) => a - b);
-      const median = (sorted.length % 2 === 0)
-        ? ((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2).toFixed(1)
-        : sorted[Math.floor(sorted.length / 2)].toFixed(1);
+      // 【新規】レート統計の更新処理
+      const maxRateText = document.getElementById("maxRateText");
+      const minRateText = document.getElementById("minRateText");
+      const avgRateText = document.getElementById("avgRateText");
 
-      maxRateEl.textContent = max.toFixed(1) + "%";
-      minRateEl.textContent = min.toFixed(1) + "%";
-      medianRateEl.textContent = median + "%";
+      if (rateHistoryLog.length === 0) {
+        maxRateText.textContent = minRateText.textContent = avgRateText.textContent = "-";
+      } else {
+        const maxRateVal = Math.max(...rateHistoryLog);
+        const minRateVal = Math.min(...rateHistoryLog);
+        const sumRateVal = rateHistoryLog.reduce((a, b) => a + b, 0);
+        const avgRateVal = (sumRateVal / rateHistoryLog.length).toFixed(0); // 小数点は四捨五入
 
-      const maxDetail = rateDetails.find(d => d.rate === max);
-      const minDetail = rateDetails.find(d => d.rate === min);
-      maxRateDetailEl.textContent = maxDetail ? `試合数: ${maxDetail.games}, 日時: ${maxDetail.time}` : "-";
-      minRateDetailEl.textContent = minDetail ? `試合数: ${minDetail.games}, 日時: ${minDetail.time}` : "-";
+        maxRateText.textContent = maxRateVal + " 点";
+        minRateText.textContent = minRateVal + " 点";
+        avgRateText.textContent = avgRateVal + " 点";
+      }
     }
 
     function checkAndRecordIfNeeded() {
@@ -177,23 +244,26 @@
         history: [...history],
         pastRates: [...pastRates],
         rateDetails: [...rateDetails],
+        rateHistoryLog: [...rateHistoryLog], // 戻すボタン用に保存
         lastSavedRate: lastSavedRate
       });
     }
 
-    window.addWin = () => {
+    window.addWin = function() {
       saveStateForUndo();
       wins++; games++;
+      if(lastSavedRate) rateHistoryLog.push(lastSavedRate); // レートログに追記
       saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
     };
 
-    window.addLoss = () => {
+    window.addLoss = function() {
       saveStateForUndo();
       games++;
+      if(lastSavedRate) rateHistoryLog.push(lastSavedRate); // レートログに追記
       saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
     };
 
-    window.undo = () => {
+    window.undo = function() {
       if (undoStack.length === 0) return;
       const last = undoStack.pop();
       wins = last.wins;
@@ -201,6 +271,7 @@
       history = [...last.history];
       pastRates = [...last.pastRates];
       rateDetails = [...last.rateDetails];
+      rateHistoryLog = [...last.rateHistoryLog]; // 1つ前に戻す
       lastSavedRate = last.lastSavedRate;
       if (lastSavedRate === null) {
         localStorage.removeItem("lastSavedRate");
@@ -210,10 +281,10 @@
       saveToStorage(); updateDisplay();
     };
 
-    window.tryReset = () => {
+    window.tryReset = function() {
       resetPressCount++;
       if (resetPressCount >= 3) {
-        wins = 0; games = 0; history = []; pastRates = []; rateDetails = [];
+        wins = 0; games = 0; history = []; pastRates = []; rateDetails = []; rateHistoryLog = [];
         lastSavedRate = null;
         resetPressCount = 0;
         localStorage.removeItem("lastSavedRate");
@@ -226,29 +297,36 @@
       }
     };
 
-    // 隠し入力箱に文字（数字）が入った瞬間に自動で判定を行う処理
-    document.getElementById("rateInputHidden").addEventListener("input", function(e) {
-      const newRate = parseInt(e.target.value);
+    // MacroDroidからの信号を受け取り自動判定を回すコア処理
+    function handleNewRateInput() {
+      const newRate = parseInt(prompt("新しいレートを入力してください"));
       if (isNaN(newRate)) return;
       
       if (lastSavedRate !== null) {
         if (newRate > lastSavedRate) {
-          window.addWin();
+          lastSavedRate = newRate;
+          localStorage.setItem("lastSavedRate", lastSavedRate);
+          window.addWin(); // 勝ち処理内で自動的にrateHistoryLogへ追記されます
         } else if (newRate < lastSavedRate) {
-          window.addLoss();
+          lastSavedRate = newRate;
+          localStorage.setItem("lastSavedRate", lastSavedRate);
+          window.addLoss(); // 負け処理内で自動的にrateHistoryLogへ追記されます
+        } else {
+          alert(`レートに変動画ありません（現在: ${newRate}）`);
         }
       } else {
+        // 初回のみ基準登録してログの1点目にする
+        lastSavedRate = newRate;
+        rateHistoryLog.push(newRate); 
+        localStorage.setItem("lastSavedRate", lastSavedRate);
+        updateDisplay();
         alert(`初期基準レートとして【 ${newRate} 】を設定しました。`);
       }
-      
-      lastSavedRate = newRate;
-      localStorage.setItem("lastSavedRate", lastSavedRate);
-      updateDisplay();
-      
-      e.target.value = ""; // 中身を空に戻す
-    });
+    }
 
-    // ページ読み込み時の初期化
+    window.triggerMacroWin = function() { handleNewRateInput(); };
+    window.triggerMacroLose = function() { handleNewRateInput(); };
+
     loadFromStorage();
     updateDisplay();
   </script>
