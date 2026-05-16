@@ -10,7 +10,6 @@
     .score, .chart-container, .history, .stats { max-width: 420px; margin: auto; text-align: left; background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     canvas { width: 100%; height: auto; margin-top: 10px; }
     .auto-panel { background: #e3f2fd; padding: 12px; border-radius: 10px; max-width: 420px; margin: 10px auto; text-align: center; font-weight: bold; border: 1px solid #90caf9; }
-    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 16px; padding: 10px 20px; margin: 5px; border-radius: 6px; font-weight: bold; }
     h1, h2 { margin-bottom: 10px; font-size: 20px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
     p { margin: 8px 0; font-size: 16px; }
     span { font-weight: bold; color: #007bff; }
@@ -21,12 +20,9 @@
 
   <h1>ぷよテト2 スコアボード</h1>
   
-  <!-- MacroDroid連動パネル（マクロはここの【自動レート取得】をタップするだけです） -->
+  <!-- 自動連動パネル（文字を打ち込む必要がないためすっきりしたデザインになります） -->
   <div class="auto-panel">
-    自動連動トリガー
-    <div style="margin-top: 5px;">
-      <button id="macroBtn" class="macro-btn" onclick="triggerMacroInput()">【自動レート取得】</button>
-    </div>
+    現在のシステム状態: <span id="systemStatus" style="color: #4caf50;">自動受信スタンドバイ</span>
   </div>
 
   <!-- 基本スコアエリア -->
@@ -173,7 +169,6 @@
     }
 
     function updateStats() {
-      // 勝率統計
       const maxRateEl = document.getElementById("maxRate");
       const minRateEl = document.getElementById("minRate");
       const medianRateEl = document.getElementById("medianRate");
@@ -201,7 +196,6 @@
         minRateDetailEl.textContent = minDetail ? ` (試合数: ${minDetail.games}, ${minDetail.time})` : "-";
       }
 
-      // レート統計
       const maxRateText = document.getElementById("maxRateText");
       const minRateText = document.getElementById("minRateText");
       const avgRateText = document.getElementById("avgRateText");
@@ -247,28 +241,24 @@
       });
     }
 
-    // カメラ（マクロ）から届いた「本物の数値」を使って自動で引き算・勝敗判定を行う
+    // 【コア処理】MacroDroidから送られた純粋な数字をそのまま受け取って勝敗計算する
     window.processCapturedRate = function(newRate) {
       saveStateForUndo();
       
       if (lastSavedRate !== null) {
         if (newRate > lastSavedRate) {
-          wins++; // レートが増えていたら勝ち
+          wins++; 
         }
-        // レートが減っていたら自動で負け（増減なしはカウントしない）
         if (newRate !== lastSavedRate) {
           games++;
           lastSavedRate = newRate;
           rateHistoryLog.push(lastSavedRate);
         } else {
-          alert(`レートに変動がありません（現在の値: ${newRate}）`);
-          return;
+          return; // 変動なしなら無視
         }
       } else {
-        // 初回のみ：カメラの数字をそのまま最初の基準レートとして登録
         lastSavedRate = newRate;
         rateHistoryLog = [newRate];
-        alert(`基準レート【 ${newRate} 】を設定しました。次戦から自動判定が始まります！`);
       }
       
       localStorage.setItem("lastSavedRate", lastSavedRate);
@@ -277,14 +267,18 @@
       checkAndRecordIfNeeded();
     };
 
-    // マクロから叩かれるプロンプト処理
-    window.triggerMacroInput = function() {
-      const newRate = parseInt(prompt("新しいレートを入力してください"));
-      if (isNaN(newRate) || newRate <= 0) return;
-      window.processCapturedRate(newRate);
-    };
+    // 【新規】MacroDroidから送信されたWeb通知（Storageイベント）をダイレクトに受信する仕組み
+    window.addEventListener("storage", function(event) {
+      if (event.key === "macro_rate_bridge" && event.newValue) {
+        const incomingRate = parseInt(event.newValue);
+        if (!isNaN(incomingRate) && incomingRate > 0) {
+          window.processCapturedRate(incomingRate);
+          // 受信後は部屋をきれいにする
+          localStorage.removeItem("macro_rate_bridge");
+        }
+      }
+    });
 
-    // 万が一のための手動バックアップ用（レートがカメラで読めなかった時用）
     window.addWinManual = function() { if(lastSavedRate !== null) window.processCapturedRate(lastSavedRate + 12); };
     window.addLossManual = function() { if(lastSavedRate !== null) window.processCapturedRate(lastSavedRate - 10); };
 
