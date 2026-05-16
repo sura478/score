@@ -10,7 +10,7 @@
     .score, .chart-container, .history, .stats { max-width: 420px; margin: auto; text-align: left; background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     canvas { width: 100%; height: auto; margin-top: 10px; }
     .auto-panel { background: #e3f2fd; padding: 12px; border-radius: 10px; max-width: 420px; margin: 10px auto; text-align: center; font-weight: bold; border: 1px solid #90caf9; }
-    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 14px; padding: 8px 12px; margin: 5px; border-radius: 6px; font-weight: bold; }
+    .macro-btn { background: #e0f7fa; border: 1px dashed #00bcd4; font-size: 16px; padding: 10px 20px; margin: 5px; border-radius: 6px; font-weight: bold; }
     h1, h2 { margin-bottom: 10px; font-size: 20px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
     p { margin: 8px 0; font-size: 16px; }
     span { font-weight: bold; color: #007bff; }
@@ -21,12 +21,11 @@
 
   <h1>ぷよテト2 スコアボード</h1>
   
-  <!-- MacroDroid連動パネル（文字入力エラーを回避するため、マクロにここを押させます） -->
+  <!-- MacroDroid連動パネル（マクロはここの【自動レート取得】をタップするだけです） -->
   <div class="auto-panel">
     自動連動トリガー
     <div style="margin-top: 5px;">
-      <button id="macroWinBtn" class="macro-btn" onclick="autoCalculateRate(12)">【勝率+レートアップ】</button>
-      <button id="macroLoseBtn" class="macro-btn" onclick="autoCalculateRate(-10)">【勝率+レートダウン】</button>
+      <button id="macroBtn" class="macro-btn" onclick="triggerMacroInput()">【自動レート取得】</button>
     </div>
   </div>
 
@@ -37,8 +36,8 @@
     <p>試合数: <span id="games">0</span></p>
     <p>勝率: <span id="winrate">0%</span></p>
     <div style="text-align: center; margin-top: 10px;">
-      <button onclick="addWin()" style="background-color: #e8f5e9;">勝ち +1</button>
-      <button onclick="addLoss()" style="background-color: #ffebee;">負け +1</button>
+      <button onclick="addWinManual()" style="background-color: #e8f5e9;">手動 勝ち+1</button>
+      <button onclick="addLossManual()" style="background-color: #ffebee;">手動 負け+1</button>
       <button onclick="undo()">↩️ 戻す</button>
       <button onclick="tryReset()" style="background-color: #eceff1;">リセット</button>
     </div>
@@ -85,9 +84,8 @@
     let resetPressCount = 0;
     let resetTimeout;
     
-    // 初期の基準レート（最初は2000点からスタートし、自動で上下させます）
-    let lastSavedRate = 2000;
-    let rateHistoryLog = [2000]; 
+    let lastSavedRate = null;
+    let rateHistoryLog = []; 
 
     function loadFromStorage() {
       try {
@@ -98,10 +96,10 @@
           history = saved.history || [];
           pastRates = saved.pastRates || [];
           rateDetails = saved.rateDetails || [];
-          rateHistoryLog = saved.rateHistoryLog || [2000];
+          rateHistoryLog = saved.rateHistoryLog || [];
         }
       } catch(e) {}
-      lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : 2000;
+      lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : null;
     }
 
     function saveToStorage() {
@@ -122,10 +120,14 @@
         historyList.appendChild(li);
       }
 
+      if (lastSavedRate === null) {
+        document.getElementById("currentRateView").textContent = "未設定 (1戦目の数字待ち)";
+      } else {
+        document.getElementById("currentRateView").textContent = lastSavedRate + " 点";
+      }
+
       updateCharts();
       updateStats();
-      
-      document.getElementById("currentRateView").textContent = lastSavedRate + " 点";
     }
 
     function updateCharts() {
@@ -158,7 +160,7 @@
         data: {
           labels: rateHistoryLog.map((_, i) => `${i}戦目`),
           datasets: [{
-            label: '現在のレート',
+            label: '本物のレート',
             data: rateHistoryLog,
             borderColor: '#4caf50',
             backgroundColor: 'rgba(76, 175, 80, 0.1)',
@@ -245,18 +247,29 @@
       });
     }
 
-    // 【新規】マクロのタップを検知して、勝敗カウントと同時にレートも増減させてグラフ・統計を回す処理
-    window.autoCalculateRate = function(amount) {
+    // カメラ（マクロ）から届いた「本物の数値」を使って自動で引き算・勝敗判定を行う
+    window.processCapturedRate = function(newRate) {
       saveStateForUndo();
       
-      if (amount > 0) {
-        wins++;
+      if (lastSavedRate !== null) {
+        if (newRate > lastSavedRate) {
+          wins++; // レートが増えていたら勝ち
+        }
+        // レートが減っていたら自動で負け（増減なしはカウントしない）
+        if (newRate !== lastSavedRate) {
+          games++;
+          lastSavedRate = newRate;
+          rateHistoryLog.push(lastSavedRate);
+        } else {
+          alert(`レートに変動がありません（現在の値: ${newRate}）`);
+          return;
+        }
+      } else {
+        // 初回のみ：カメラの数字をそのまま最初の基準レートとして登録
+        lastSavedRate = newRate;
+        rateHistoryLog = [newRate];
+        alert(`基準レート【 ${newRate} 】を設定しました。次戦から自動判定が始まります！`);
       }
-      games++;
-      
-      // レートを加算・減算
-      lastSavedRate = lastSavedRate + amount;
-      rateHistoryLog.push(lastSavedRate);
       
       localStorage.setItem("lastSavedRate", lastSavedRate);
       saveToStorage(); 
@@ -264,8 +277,16 @@
       checkAndRecordIfNeeded();
     };
 
-    window.addWin = function() { window.autoCalculateRate(12); };   // 手動勝ちボタン（平均的な+12点で計算）
-    window.addLoss = function() { window.autoCalculateRate(-10); }; // 手動負けボタン（平均的な-10点で計算）
+    // マクロから叩かれるプロンプト処理
+    window.triggerMacroInput = function() {
+      const newRate = parseInt(prompt("新しいレートを入力してください"));
+      if (isNaN(newRate) || newRate <= 0) return;
+      window.processCapturedRate(newRate);
+    };
+
+    // 万が一のための手動バックアップ用（レートがカメラで読めなかった時用）
+    window.addWinManual = function() { if(lastSavedRate !== null) window.processCapturedRate(lastSavedRate + 12); };
+    window.addLossManual = function() { if(lastSavedRate !== null) window.processCapturedRate(lastSavedRate - 10); };
 
     window.undo = function() {
       if (undoStack.length === 0) return;
@@ -277,17 +298,21 @@
       rateDetails = [...last.rateDetails];
       rateHistoryLog = [...last.rateHistoryLog];
       lastSavedRate = last.lastSavedRate;
-      localStorage.setItem("lastSavedRate", lastSavedRate);
+      if (lastSavedRate === null) {
+        localStorage.removeItem("lastSavedRate");
+      } else {
+        localStorage.setItem("lastSavedRate", lastSavedRate);
+      }
       saveToStorage(); updateDisplay();
     };
 
     window.tryReset = function() {
       resetPressCount++;
       if (resetPressCount >= 3) {
-        wins = 0; games = 0; history = []; pastRates = []; rateDetails = []; rateHistoryLog = [2000];
-        lastSavedRate = 2000;
+        wins = 0; games = 0; history = []; pastRates = []; rateDetails = []; rateHistoryLog = [];
+        lastSavedRate = null;
         resetPressCount = 0;
-        localStorage.setItem("lastSavedRate", 2000);
+        localStorage.removeItem("lastSavedRate");
         saveToStorage(); updateDisplay();
         alert("リセットされました");
       } else {
