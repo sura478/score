@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>自動レートスコアボード</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    button, input { font-size: 18px; margin: 5px; padding: 10px; }
+    .score, .chart-container, .history, .stats { max-width: 400px; margin: auto; text-align: left; background: #f9f9f9; padding: 10px; border-radius: 10px; margin-top: 20px; }
+    canvas { width: 100%; height: auto; }
+    .auto-panel { background: #e3f2fd; padding: 10px; border-radius: 10px; max-width: 400px; margin: 10px auto; text-align: center; font-weight: bold; }
+    /* MacroDroidに数字を打ってもらうための隠し箱 */
+    #rateInputHidden { width: 100px; height: 30px; opacity: 0.1; position: absolute; top: 10px; left: 10px; }
+  </style>
+</head>
+<body>
+
+  <h1>スコアボード</h1>
+  
+  <div class="auto-panel">
+    現在の登録レート: <span id="currentRateView">-</span>
+  </div>
+
+  <!-- テスト用に少しだけ薄く見えるようにしています -->
+  <input type="number" id="rateInputHidden" placeholder="自動連動用">
+
+  <div class="score">
+    <p>勝ち: <span id="wins">0</span></p>
+    <p>試合数: <span id="games">0</span></p>
+    <p>勝率: <span id="winrate">0%</span></p>
+    <button onclick="addWin()">勝ち +1</button>
+    <button onclick="addLoss()">負け +1</button>
+    <button onclick="undo()">↩️ 戻す</button>
+    <button onclick="tryReset()">リセット</button>
+  </div>
+  <div class="history">
+    <h2>30試合ごとの履歴</h2>
+    <ul id="historyList"></ul>
+  </div>
+  <div class="chart-container">
+    <h2>勝率グラフ</h2>
+    <canvas id="winrateChart"></canvas>
+  </div>
+  <div class="stats">
+    <h2>統計</h2>
+    <p>最大勝率: <span id="maxRate">-</span></p>
+    <p>　↳ <span id="maxRateDetail">-</span></p>
+    <p>最小勝率: <span id="minRate">-</span></p>
+    <p>　↳ <span id="minRateDetail">-</span></p>
+    <p>中央値: <span id="medianRate">-</span></p>
+  </div>
+
+  <script src="https://jsdelivr.net"></script>
+  <script>
+    let wins = 0, games = 0, history = [], pastRates = [], rateDetails = [], undoStack = [];
+    let chart;
+    let resetPressCount = 0;
+    let resetTimeout;
+    let lastSavedRate = null;
+
+    function loadFromStorage() {
+      const saved = JSON.parse(localStorage.getItem("scoreData"));
+      if (saved) {
+        wins = saved.wins || 0;
+        games = saved.games || 0;
+        history = saved.history || [];
+        pastRates = saved.pastRates || [];
+        rateDetails = saved.rateDetails || [];
+      }
+      lastSavedRate = localStorage.getItem("lastSavedRate") ? parseInt(localStorage.getItem("lastSavedRate")) : null;
+    }
+
+    function saveToStorage() {
+      localStorage.setItem("scoreData", JSON.stringify({ wins, games, history, pastRates, rateDetails }));
+    }
+
+    function updateDisplay() {
+      document.getElementById("wins").textContent = wins;
+      document.getElementById("games").textContent = games;
+      const rate = games > 0 ? ((wins / games) * 100).toFixed(1) : 0;
+      document.getElementById("winrate").textContent = rate + "%";
+
+      const historyList = document.getElementById("historyList");
+      historyList.innerHTML = "";
+      for (let i = history.length - 1; i >= 0; i--) {
+        const li = document.createElement("li");
+        li.textContent = history[i];
+        historyList.appendChild(li);
+      }
+
+      updateChart();
+      updateStats();
+      
+      if(lastSavedRate) {
+        document.getElementById("currentRateView").textContent = lastSavedRate;
+      } else {
+        document.getElementById("currentRateView").textContent = "-";
+      }
+    }
+
+    function updateChart() {
+      const ctx = document.getElementById("winrateChart").getContext("2d");
+      if (chart) chart.destroy();
+      if (typeof Chart === 'undefined') return;
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: pastRates.map((_, i) => `${(i + 1) * 30}試合目`),
+          datasets: [{
+            label: '勝率 (%)',
+            data: pastRates,
+            borderColor: 'blue',
+            backgroundColor: 'rgba(0, 123, 255, 0.2)',
+            tension: 0.3,
+            fill: true
+          }],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { suggestedMin: 0, suggestedMax: 100, ticks: { callback: value => value + '%' } }
+          }
+        }
+      });
+    }
+
+    function updateStats() {
+      const maxRateEl = document.getElementById("maxRate");
+      const minRateEl = document.getElementById("minRate");
+      const medianRateEl = document.getElementById("medianRate");
+      const maxRateDetailEl = document.getElementById("maxRateDetail");
+      const minRateDetailEl = document.getElementById("minRateDetail");
+
+      if (pastRates.length === 0) {
+        maxRateEl.textContent = minRateEl.textContent = medianRateEl.textContent = "-";
+        maxRateDetailEl.textContent = minRateDetailEl.textContent = "-";
+        return;
+      }
+
+      const max = Math.max(...pastRates);
+      const min = Math.min(...pastRates);
+      const sorted = [...pastRates].sort((a, b) => a - b);
+      const median = (sorted.length % 2 === 0)
+        ? ((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2).toFixed(1)
+        : sorted[Math.floor(sorted.length / 2)].toFixed(1);
+
+      maxRateEl.textContent = max.toFixed(1) + "%";
+      minRateEl.textContent = min.toFixed(1) + "%";
+      medianRateEl.textContent = median + "%";
+
+      const maxDetail = rateDetails.find(d => d.rate === max);
+      const minDetail = rateDetails.find(d => d.rate === min);
+      maxRateDetailEl.textContent = maxDetail ? `試合数: ${maxDetail.games}, 日時: ${maxDetail.time}` : "-";
+      minRateDetailEl.textContent = minDetail ? `試合数: ${minDetail.games}, 日時: ${minDetail.time}` : "-";
+    }
+
+    function checkAndRecordIfNeeded() {
+      if (games % 30 === 0 && games !== 0) {
+        const now = new Date();
+        const timestamp = now.toLocaleString();
+        const currentRate = ((wins / games) * 100).toFixed(1);
+        pastRates.push(parseFloat(currentRate));
+        rateDetails.push({ rate: parseFloat(currentRate), games: games, time: timestamp });
+
+        const total = pastRates.reduce((a, b) => a + b, 0);
+        const avgRate = (total / pastRates.length).toFixed(1);
+        const record = `試合数 ${games}：${timestamp} 勝率 ${currentRate}%（平均勝率：${avgRate}%）`;
+        history.push(record);
+        saveToStorage();
+      }
+    }
+
+    function saveStateForUndo() {
+      undoStack.push({
+        wins, games,
+        history: [...history],
+        pastRates: [...pastRates],
+        rateDetails: [...rateDetails],
+        lastSavedRate: lastSavedRate
+      });
+    }
+
+    window.addWin = () => {
+      saveStateForUndo();
+      wins++; games++;
+      saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
+    };
+
+    window.addLoss = () => {
+      saveStateForUndo();
+      games++;
+      saveToStorage(); updateDisplay(); checkAndRecordIfNeeded();
+    };
+
+    window.undo = () => {
+      if (undoStack.length === 0) return;
+      const last = undoStack.pop();
+      wins = last.wins;
+      games = last.games;
+      history = [...last.history];
+      pastRates = [...last.pastRates];
+      rateDetails = [...last.rateDetails];
+      lastSavedRate = last.lastSavedRate;
+      if (lastSavedRate === null) {
+        localStorage.removeItem("lastSavedRate");
+      } else {
+        localStorage.setItem("lastSavedRate", lastSavedRate);
+      }
+      saveToStorage(); updateDisplay();
+    };
+
+    window.tryReset = () => {
+      resetPressCount++;
+      if (resetPressCount >= 3) {
+        wins = 0; games = 0; history = []; pastRates = []; rateDetails = [];
+        lastSavedRate = null;
+        resetPressCount = 0;
+        localStorage.removeItem("lastSavedRate");
+        saveToStorage(); updateDisplay();
+        alert("リセットされました");
+      } else {
+        if (resetTimeout) clearTimeout(resetTimeout);
+        resetTimeout = setTimeout(() => { resetPressCount = 0; }, 3000);
+        alert(`リセットするにはもう${3 - resetPressCount}回押してください`);
+      }
+    };
+
+    // 隠し入力箱に文字（数字）が入った瞬間に自動で判定を行う処理
+    document.getElementById("rateInputHidden").addEventListener("input", function(e) {
+      const newRate = parseInt(e.target.value);
+      if (isNaN(newRate)) return;
+      
+      if (lastSavedRate !== null) {
+        if (newRate > lastSavedRate) {
+          window.addWin();
+        } else if (newRate < lastSavedRate) {
+          window.addLoss();
+        }
+      } else {
+        alert(`初期基準レートとして【 ${newRate} 】を設定しました。`);
+      }
+      
+      lastSavedRate = newRate;
+      localStorage.setItem("lastSavedRate", lastSavedRate);
+      updateDisplay();
+      
+      e.target.value = ""; // 中身を空に戻す
+    });
+
+    // ページ読み込み時の初期化
+    loadFromStorage();
+    updateDisplay();
+  </script>
+</body>
+</html>
